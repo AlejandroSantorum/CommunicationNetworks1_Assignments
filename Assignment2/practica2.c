@@ -32,7 +32,7 @@ Assignment 2
 #define IP_ALEN 4 /* IPv4 - IP address size */
 #define NO_FILTER 0
 #define ACTIVE_FILTER 1
-#define TWO_BYTES_FORWARD 2
+#define FORWARD_1BYTE 1
 #define DISPLACE_1BYTE 8
 #define ETH_ALEN 6 /* Number of bytes of Ethernet Address */
 #define ETHTYPE_IP 0x0800 /* Ethernet type for IP */
@@ -187,30 +187,26 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	printf("\tANALISIS DE NIVEL DE ENLACE (NIVEL 2):\n");
 
 	printf("Direccion Ethernet Destino = ");
-	aux = ntohs(*(uint16_t*)pack);
-	printf("%x-%x", (aux & 0xff00) >> DISPLACE_1BYTE, aux & 0x00ff);
-	pack += TWO_BYTES_FORWARD;
+	printf("%02x", pack[0]);
 	for(i=1; i<ETH_ALEN; i++){
-		aux = ntohs(*(uint16_t*)pack);
-		printf("-%x-%x", (aux & 0xff00) >> DISPLACE_1BYTE, aux & 0x00ff);
-		pack += TWO_BYTES_FORWARD;
+		printf("-%02x", pack[i]);
 	}
 	printf("\n");
 
+	pack += ETH_ALEN;
+
 	printf("Direccion Ethernet Origen = ");
-	aux = ntohs(*(uint16_t*)pack);
-	printf("%x-%x", (aux & 0xff00) >> DISPLACE_1BYTE, aux & 0x00ff);
-	pack += TWO_BYTES_FORWARD;
-	for(i=0; i<ETH_ALEN; i++){
-		aux = ntohs(*(uint16_t*)pack);
-		printf("-%x-%x", (aux & 0xff00) >> DISPLACE_1BYTE, aux & 0x00ff);
-		pack += TWO_BYTES_FORWARD;
+	printf("%02x", pack[0]);
+	for(i=1; i<ETH_ALEN; i++){
+		printf("-%02x", pack[i]);
 	}
 	printf("\n");
+
+	pack += ETH_ALEN;
 
 	aux = ntohs(*(uint16_t*)pack);
 	printf("Tipo Ethernet = %04x\n", aux);
-	pack += TWO_BYTES_FORWARD;
+	pack += 2*FORWARD_1BYTE;
 
 	if(aux != ETHTYPE_IP){
 		printf("El siguiente protocolo no se corresponde con un protocolo IP.\nFinalizamos analisis de este paquete\n");
@@ -225,22 +221,22 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 
 	printf("Longitud Cabecera = %"PRIu16"\n", (aux & 0x0f00) >> SERVTYPE_LEN); /* 0x0f00 mask + 8 bit displace */
 	
-	pack += TWO_BYTES_FORWARD;
+	pack += 2*FORWARD_1BYTE;
 	aux = ntohs(*(uint16_t*)pack);
 	printf("Logitud Total = %"PRIu16"\n", aux);
 
-	pack += (2*TWO_BYTES_FORWARD); /* Identification is not printed */
+	pack += (4*FORWARD_1BYTE); /* Identification is not printed */
 	aux = ntohs(*(uint16_t*)pack);
 	uint16_t frag_offset = 0;
 	printf("Desplazamiento = %"PRIu16"\n", (frag_offset = (aux & 0x1fff)));
 
-	pack += TWO_BYTES_FORWARD;
+	pack += 2*FORWARD_1BYTE;
 	aux = ntohs(*(uint16_t*)pack);
 	printf("Tiempo de vida = %"PRIu16"\n", (aux & 0xff00) >> DISPLACE_1BYTE);
 	uint8_t protocol = 0;
 	printf("Protocolo = %"PRIu16"\n", (protocol = (aux & 0x00ff)));
 
-	pack += (2*TWO_BYTES_FORWARD); /* Checksum is not printed */
+	pack += (4*FORWARD_1BYTE); /* Checksum is not printed */
 	uint8_t ipsrc[IP_ALEN];
 	auxl = ntohl(*(uint32_t*)pack);
 	ipsrc[0] = (auxl & 0xf000) >> 24;
@@ -257,7 +253,7 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 		}
 	}
 
-	pack += (2*TWO_BYTES_FORWARD);
+	pack += (4*FORWARD_1BYTE);
 	uint8_t ipdst[IP_ALEN];
 	auxl = ntohl(*(uint32_t*)pack);
 	ipdst[0] = (auxl & 0xf000) >> 24;
@@ -289,7 +285,7 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	if(protocol == TCP_DECIMAL_VALUE) printf("\tANALISIS DE NIVEL DE TRANSPORTE TCP (NIVEL 4):\n");
 	else printf("\tANALISIS DE NIVEL DE TRANSPORTE UDP(NIVEL 4):\n"); /* Already checked that lvl 4 protocol is TCP or UDP */
 	
-	pack += (2*TWO_BYTES_FORWARD);
+	pack += (4*FORWARD_1BYTE);
 	aux = ntohs(*(uint16_t*)pack);
 	printf("Puerto Origen =  %"PRIu16"\n", aux);
 	if(flag_srcport == ACTIVE_FILTER){
@@ -301,7 +297,7 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 		}
 	}
 
-	pack += TWO_BYTES_FORWARD;
+	pack += 2*FORWARD_1BYTE;
 	aux = ntohs(*(uint16_t*)pack);
 	printf("Puerto Destino =  %"PRIu16"\n", aux);
 	if(flag_dstport == ACTIVE_FILTER){
@@ -314,13 +310,13 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	}
 
 	if(protocol == TCP_DECIMAL_VALUE){ /* TCP ANALYSIS */
-		pack += (TWO_BYTES_FORWARD + SEQUENCE_NUM_LEN + ACKNOWLEDGEMENT_NUM_LEN);
+		pack += (2*FORWARD_1BYTE + SEQUENCE_NUM_LEN + ACKNOWLEDGEMENT_NUM_LEN);
 		aux = ntohs(*(uint16_t*)pack);
 		printf("Bandera SYN = %d\n", (aux & 0x0002) >> 1);
 		printf("Bandera FIN = %d\n", aux & 0x0001);
 	}
 	else if(protocol == UDP_DECIMAL_VALUE){ /* UDP ANALYSIS */
-		pack += TWO_BYTES_FORWARD;
+		pack += 2*FORWARD_1BYTE;
 		aux = ntohs(*(uint16_t*)pack);
 		printf("Campo Longitud = %"PRIu16"\n", aux);
 	}
