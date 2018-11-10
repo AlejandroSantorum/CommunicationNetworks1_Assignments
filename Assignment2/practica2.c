@@ -1,15 +1,13 @@
 /***************************************************************************
 File: practica2.c
+Project: Assignment 2 Communication Networks I
 Authors:
 	- Alejandro Santorum Varela - alejandro.santorum@estudiante.uam.es
 	- David Cabornero Pascual - david.cabornero@estudiante.uam.es
-Date: 02-11-2018
-Assignment 2
+Date: 10-11-2018
 ***************************************************************************/
-
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <pcap.h>
 #include <string.h>
 #include <netinet/in.h>
@@ -19,6 +17,7 @@ Assignment 2
 #include <time.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include "practica2.h"
 
 #define NO_LIMIT -1 /* No package limit at pcap_loop function */
 #define ETH_FRAME_MAX 1514 /* Ethernet trace maximum size */
@@ -35,16 +34,18 @@ Assignment 2
 #define FORWARD_1BYTE 1
 #define DISPLACE_1BYTE 8
 #define ETH_ALEN 6 /* Number of bytes of Ethernet Address */
-#define ETHTYPE_IP 0x0800 /* Ethernet type for IP */
+#define ETHTYPE_IPv4 0x0800 /* Ethernet type for IPv4 */
 #define IHL_LEN 4 /* IHL length in bits */
+#define IHL 4 /* IHL indicates the header length in 32 bit word (32 bits = 4 bytes) */
 #define SERVTYPE_LEN 8 /* Service type length in bits */
+#define FRAG_OFFSET_CONST 8 /* The fragmentation offset is always a multiple of 8 (last 3 bits of 16 are 0)*/
 #define TCP_DECIMAL_VALUE 6 /* TCP decimal value */
 #define UDP_DECIMAL_VALUE 17 /* UDP decimal value */
 #define SEQUENCE_NUM_LEN 4 /* TCP sequence number length in bytes */
 #define ACKNOWLEDGEMENT_NUM_LEN 4 /* TCP acknowledgement number length in bytes */
 
-
-
+/** Global variables */
+/** They are useful if we know what they exactly do */
 int flag_offline = 0, flag_live = 0;
 int flag_ipsrc = NO_FILTER, flag_ipdst = NO_FILTER, flag_srcport = NO_FILTER, flag_dstport = NO_FILTER;
 pcap_t *descr=NULL;
@@ -55,18 +56,72 @@ uint16_t srcport_filter = NO_FILTER;
 uint16_t dstport_filter = NO_FILTER;
 
 
-void signal_handler(int nsignal){
-	(void) nsignal; /* Telling the compiler this variable is not used on purpose */
-	printf("--> Control C pulsado <--\n");
-	pcap_breakloop(descr);
-}
+int main(int argc, char **argv){
+	char errbuf[PCAP_ERRBUF_SIZE];
+	int ret;
 
-void invalid_input_message(){
-	printf("ERROR: Parámetros de entrada no válidos\n");
-	printf("\tParámetros obligatorios: <-f ficheroPcap/ -i interfaz> (excluyentes entre ellos)\n");
-	printf("\tParámetros opcionales: [-ipo IP_Origen] [-ipd IP_Destino] [-po Puerto_Origen] [-pd Puerto_Destino]\n");
-}
+	if(signal(SIGINT, signal_handler) == SIG_ERR) {
+		printf("ERROR: Fallo al capturar la senal SIGINT.\n");
+		exit(ERROR);
+	}
 
+	input_parameter_checking(argc, argv);
+
+	if(flag_ipsrc == ACTIVE_FILTER){
+		printf("Filtro IP_Origen: ");
+		printf("%"PRIu8".%"PRIu8".%"PRIu8".%"PRIu8"\n", ipsrc_filter[0], ipsrc_filter[1], ipsrc_filter[2], ipsrc_filter[3]);
+	}
+	if(flag_ipdst == ACTIVE_FILTER){
+		printf("Filtro IP_Destino: ");
+		printf("%"PRIu8".%"PRIu8".%"PRIu8".%"PRIu8"\n", ipdst_filter[0], ipdst_filter[1], ipdst_filter[2], ipdst_filter[3]);
+	}
+	if(flag_srcport == ACTIVE_FILTER){
+		printf("Filtro Puerto_Origen: ");
+		printf("%"PRIu16"\n", srcport_filter);
+	}
+	if(flag_dstport == ACTIVE_FILTER){
+		printf("Filtro Puerto_Destino: ");
+		printf("%"PRIu16"\n", dstport_filter);
+	}
+
+	if(flag_live){
+		/* Interface opening */
+		if ((descr = pcap_open_live(argv[2], ETH_FRAME_MAX, 0, READ_TIMEOUT, errbuf)) == NULL){
+			printf("Error: pcap_open_live(): %s, %s %d.\n",errbuf,__FILE__,__LINE__);
+			exit(ERROR);
+		}
+	}
+	else if(flag_offline){
+		/* Trace analysis */
+		if((descr = pcap_open_offline(argv[2], errbuf)) == NULL){
+			printf("Error: pcap_open_offline(): %s, %s, %d.\n", errbuf, __FILE__, __LINE__);
+			exit(ERROR);
+		}
+	}
+	else{ /* This error has been already treated, but it helps to endure the code even more */
+		printf("ERROR: Ni lectura de interfaz ni analisis de trama han sido seleccionadas\n");
+		exit(ERROR);
+	}
+
+
+	ret = pcap_loop(descr, NO_LIMIT, package_treat, NULL);
+	switch(ret){
+		case OK:
+			printf("\nTraza leida con exito\n");
+			break;
+		case PACK_ERROR:
+			printf("\nERROR leyendo paquetes con la funcion pcap_loop()\n");
+			break;
+		case BREAKLOOP:
+			printf("\npcap_breakloop llamado y ha terminado con la ejecucion de pcap_loop\n");
+			break;
+	}
+
+	printf("NUMERO DE PAQUETES PROCESADOS: %"PRIu64"\n", counter);
+	pcap_close(descr);
+
+	return 0;
+}
 
 
 void input_parameter_checking(int argc, char **argv){
@@ -163,7 +218,6 @@ void input_parameter_checking(int argc, char **argv){
 		}
 	}
 	return;
-
 }
 
 
@@ -171,6 +225,8 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	int i;
 	uint16_t aux;
 	uint32_t auxl;
+	uint8_t ipsrc[IP_ALEN];
+	uint8_t ipdst[IP_ALEN];
 
 	(void)user; /* Indicating to the compiler that the variable is not used */
 
@@ -180,8 +236,8 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 		exit(ERROR);
 	}
 
-	printf("Nuevo paquete capturado el %s\n", ctime((const time_t *) &(header->ts.tv_sec)));
 	counter++;
+	printf("\n---> NUEVO PAQUETE (nº %"PRIu64") capturado el %s", counter, ctime((const time_t *) &(header->ts.tv_sec)));
 
 	/* --------------------------- LINK LEVEL ANALYSIS ------------------------------------------------------------------ */
 	printf("\tANALISIS DE NIVEL DE ENLACE (NIVEL 2):\n");
@@ -208,8 +264,8 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	printf("Tipo Ethernet = %04x\n", aux);
 	pack += 2*FORWARD_1BYTE;
 
-	if(aux != ETHTYPE_IP){
-		printf("El siguiente protocolo no se corresponde con un protocolo IP.\nFinalizamos analisis de este paquete\n");
+	if(aux != ETHTYPE_IPv4){ /* Ethernet type is not IPv4 */
+		printf("El siguiente protocolo no se corresponde con un protocolo IPv4.\nFinalizamos analisis de este paquete\n");
 		return;
 	}
 	/* ------------------------------------------------------------------------------------------------------------------ */
@@ -217,10 +273,10 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	printf("\tANALISIS DE NIVEL DE RED IP (NIVEL 3):\n");
 
 	aux = ntohs(*(uint16_t*)pack);
-	printf("Version = %"PRIu16"\n", (aux & 0xf000) >> (IHL_LEN+SERVTYPE_LEN)); /* first 4 bits mask + 12 bit displace */
+	printf("Version = %"PRIu16"\n", (aux & 0xf000) >> (IHL_LEN+SERVTYPE_LEN)); /* first 4 bits mask + 8 bit displace */
 
-	printf("Longitud Cabecera = %"PRIu16"\n", (aux & 0x0f00) >> SERVTYPE_LEN); /* 0x0f00 mask + 8 bit displace */
-	
+	printf("Longitud Cabecera = %"PRIu16"\n", ((aux & 0x0f00) >> SERVTYPE_LEN)*IHL); /* 0x0f00 mask + 8 bit displace */
+
 	pack += 2*FORWARD_1BYTE;
 	aux = ntohs(*(uint16_t*)pack);
 	printf("Logitud Total = %"PRIu16"\n", aux);
@@ -228,7 +284,7 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	pack += (4*FORWARD_1BYTE); /* Identification is not printed */
 	aux = ntohs(*(uint16_t*)pack);
 	uint16_t frag_offset = 0;
-	printf("Desplazamiento = %"PRIu16"\n", (frag_offset = (aux & 0x1fff)));
+	printf("Desplazamiento = %"PRIu16"\n", (frag_offset = (aux & 0x1fff))*FRAG_OFFSET_CONST);
 
 	pack += 2*FORWARD_1BYTE;
 	aux = ntohs(*(uint16_t*)pack);
@@ -237,13 +293,12 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	printf("Protocolo = %"PRIu16"\n", (protocol = (aux & 0x00ff)));
 
 	pack += (4*FORWARD_1BYTE); /* Checksum is not printed */
-	uint8_t ipsrc[IP_ALEN];
 	auxl = ntohl(*(uint32_t*)pack);
-	ipsrc[0] = (auxl & 0xf000) >> 24;
-	ipsrc[1] = (auxl & 0x0f00) >> 16;
-	ipsrc[2] = (auxl & 0x00f0) >> 8;
-	ipsrc[3] = aux & 0x000f;
-	printf("Direccion IP Origen = %"PRIu16".%"PRIu16".%"PRIu16".%"PRIu16"\n", ipsrc[0], ipsrc[1], ipsrc[2], ipsrc[3]);
+	ipsrc[0] = (auxl & 0xff000000) >> 3*DISPLACE_1BYTE;
+	ipsrc[1] = (auxl & 0x00ff0000) >> 2*DISPLACE_1BYTE;
+	ipsrc[2] = (auxl & 0x0000ff00) >> DISPLACE_1BYTE;
+	ipsrc[3] = auxl & 0x000000ff;
+	printf("Direccion IP Origen = %"PRIu8".%"PRIu8".%"PRIu8".%"PRIu8"\n", ipsrc[0], ipsrc[1], ipsrc[2], ipsrc[3]);
 	if(flag_ipsrc == ACTIVE_FILTER){
 		if(ipsrc_filter[0]!=ipsrc[0] || ipsrc_filter[1]!=ipsrc[1] || ipsrc_filter[2]!=ipsrc[2] || ipsrc_filter[3]!=ipsrc[3]){
 			printf("Esta direccion IP de origen no ha superado el filtrado deseado\n");
@@ -254,13 +309,12 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	}
 
 	pack += (4*FORWARD_1BYTE);
-	uint8_t ipdst[IP_ALEN];
 	auxl = ntohl(*(uint32_t*)pack);
-	ipdst[0] = (auxl & 0xf000) >> 24;
-	ipdst[1] = (auxl & 0x0f00) >> 16;
-	ipdst[2] = (auxl & 0x00f0) >> 8;
-	ipdst[3] = aux & 0x000f;
-	printf("Direccion IP Destino = %"PRIu16".%"PRIu16".%"PRIu16".%"PRIu16"\n", ipdst[0], ipdst[1], ipdst[2], ipdst[3]);
+	ipdst[0] = (auxl & 0xff000000) >> 3*DISPLACE_1BYTE;
+	ipdst[1] = (auxl & 0x00ff0000) >> 2*DISPLACE_1BYTE;
+	ipdst[2] = (auxl & 0x0000ff00) >> DISPLACE_1BYTE;
+	ipdst[3] = auxl & 0x000000ff;
+	printf("Direccion IP Destino = %"PRIu8".%"PRIu8".%"PRIu8".%"PRIu8"\n", ipdst[0], ipdst[1], ipdst[2], ipdst[3]);
 	if(flag_ipdst == ACTIVE_FILTER){
 		if(ipdst_filter[0]!=ipdst[0] || ipdst_filter[1]!=ipdst[1] || ipdst_filter[2]!=ipdst[2] || ipdst_filter[3]!=ipdst[3]){
 			printf("Esta direccion IP de destino no ha superado el filtrado deseado\n");
@@ -284,7 +338,7 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	/* ------------------------- TRANSPORT LEVEL ANALYSIS --------------------------------------------------------------- */
 	if(protocol == TCP_DECIMAL_VALUE) printf("\tANALISIS DE NIVEL DE TRANSPORTE TCP (NIVEL 4):\n");
 	else printf("\tANALISIS DE NIVEL DE TRANSPORTE UDP(NIVEL 4):\n"); /* Already checked that lvl 4 protocol is TCP or UDP */
-	
+
 	pack += (4*FORWARD_1BYTE);
 	aux = ntohs(*(uint16_t*)pack);
 	printf("Puerto Origen =  %"PRIu16"\n", aux);
@@ -325,69 +379,15 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 }
 
 
-int main(int argc, char **argv){
-	char errbuf[PCAP_ERRBUF_SIZE];
-	int ret;
-
-	if(signal(SIGINT, signal_handler) == SIG_ERR) {
-		printf("ERROR: Fallo al capturar la senal SIGINT.\n");
-		exit(ERROR);
-	}
-
-	input_parameter_checking(argc, argv);
-
-	if(flag_ipsrc == ACTIVE_FILTER){
-		printf("Filtro IP_Origen: ");
-		printf("%"PRIu8".%"PRIu8".%"PRIu8".%"PRIu8"\n", ipsrc_filter[0], ipsrc_filter[1], ipsrc_filter[2], ipsrc_filter[3]);
-	}
-	if(flag_ipdst == ACTIVE_FILTER){
-		printf("Filtro IP_Destino: ");
-		printf("%"PRIu8".%"PRIu8".%"PRIu8".%"PRIu8"\n", ipdst_filter[0], ipdst_filter[1], ipdst_filter[2], ipdst_filter[3]);
-	}
-	if(flag_srcport == ACTIVE_FILTER){
-		printf("Filtro Puerto_Origen: ");
-		printf("%"PRIu16"\n", srcport_filter);
-	}
-	if(flag_dstport == ACTIVE_FILTER){
-		printf("Filtro Puerto_Destino: ");
-		printf("%"PRIu16"\n", dstport_filter);
-	}
-
-	if(flag_live){
-		/* Interface opening */
-		if ((descr = pcap_open_live(argv[2], ETH_FRAME_MAX, 0, READ_TIMEOUT, errbuf)) == NULL){
-			printf("Error: pcap_open_live(): %s, %s %d.\n",errbuf,__FILE__,__LINE__);
-			exit(ERROR);
-		}
-	}
-	else if(flag_offline){
-		/* Trace analysis */
-		if((descr = pcap_open_offline(argv[2], errbuf)) == NULL){
-			printf("Error: pcap_open_offline(): %s, %s, %d.\n", errbuf, __FILE__, __LINE__);
-			exit(ERROR);
-		}
-	}
-	else{ /* This error has been already treated, but it helps to endure the code even more */
-		printf("ERROR: Ni lectura de interfaz ni analisis de trama han sido seleccionadas\n");
-		exit(ERROR);
-	}
+void invalid_input_message(){
+	printf("ERROR: Parámetros de entrada no válidos\n");
+	printf("\tParámetros obligatorios: <-f ficheroPcap/ -i interfaz> (excluyentes entre ellos)\n");
+	printf("\tParámetros opcionales: [-ipo IP_Origen] [-ipd IP_Destino] [-po Puerto_Origen] [-pd Puerto_Destino]\n");
+}
 
 
-	ret = pcap_loop(descr, NO_LIMIT, package_treat, NULL);
-	switch(ret){
-		case OK:
-			printf("Traza leida con exito\n");
-			break;
-		case PACK_ERROR:
-			printf("ERROR leyendo paquetes con la funcion pcap_loop()\n");
-			break;
-		case BREAKLOOP:
-			printf("pcap_breakloop llamado y ha terminado con la ejecucion de pcap_loop\n");
-			break;
-	}
-
-	printf("NUMERO DE PAQUETES PROCESADOS: %"PRIu64"\n", counter);
-	pcap_close(descr);
-
-	return 0;
+void signal_handler(int nsignal){
+	(void) nsignal; /* Telling the compiler this variable is not used on purpose */
+	printf("--> Control C pulsado <--\n");
+	pcap_breakloop(descr);
 }

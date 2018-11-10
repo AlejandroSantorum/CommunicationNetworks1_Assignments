@@ -1,3 +1,11 @@
+/***************************************************************************
+File: practica1.h
+Project: Assignment 1 Communication Networks I
+Authors:
+	- Alejandro Santorum Varela - alejandro.santorum@estudiante.uam.es
+	- David Cabornero Pascual - david.cabornero@estudiante.uam.es
+Date: 17-10-2018
+***************************************************************************/
 #ifndef PRACTICA1_H
 #define PRACTICA1_H
 

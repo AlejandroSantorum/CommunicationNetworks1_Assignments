@@ -1,11 +1,10 @@
 /***************************************************************************
-practica1.c
-Muestra el tiempo de llegada de los primeros 50 paquetes a la interface eth0
-y los vuelca a traza nueva (�correctamente?) con tiempo actual
-
- Compila: gcc -Wall -o EjemploPcapP1 EjemploPcapP1.c -lpcap
- Autor: Jose Luis Garcia Dorado
- 2018 EPS-UAM
+File: practica1.c
+Project: Assignment 1 Communication Networks I
+Authors:
+	- Alejandro Santorum Varela - alejandro.santorum@estudiante.uam.es
+	- David Cabornero Pascual - david.cabornero@estudiante.uam.es
+Date: 17-10-2018
 ***************************************************************************/
 
 #ifdef HAVE_CONFIG_H
