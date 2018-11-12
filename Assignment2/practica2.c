@@ -275,7 +275,8 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	aux = ntohs(*(uint16_t*)pack);
 	printf("Version = %"PRIu16"\n", (aux & 0xf000) >> (IHL_LEN+SERVTYPE_LEN)); /* first 4 bits mask + 8 bit displace */
 
-	printf("Longitud Cabecera = %"PRIu16"\n", ((aux & 0x0f00) >> SERVTYPE_LEN)*IHL); /* 0x0f00 mask + 8 bit displace */
+	printf("Valor del campo Longitud Cabecera = %"PRIu16"\n", (aux & 0x0f00) >> SERVTYPE_LEN); /* 0x0f00 mask + 8 bit displace */
+	printf("Longitud de Cabecera real (interpretando el valor del campo) = %"PRIu16"\n", ((aux & 0x0f00) >> SERVTYPE_LEN)*IHL);
 
 	pack += 2*FORWARD_1BYTE;
 	aux = ntohs(*(uint16_t*)pack);
@@ -284,7 +285,8 @@ void package_treat(u_char *user, const struct pcap_pkthdr *header, const uint8_t
 	pack += (4*FORWARD_1BYTE); /* Identification is not printed */
 	aux = ntohs(*(uint16_t*)pack);
 	uint16_t frag_offset = 0;
-	printf("Desplazamiento = %"PRIu16"\n", (frag_offset = (aux & 0x1fff))*FRAG_OFFSET_CONST);
+	printf("Valor campo desplazamiento en decimal = %"PRIu16"\n", (frag_offset = (aux & 0x1fff)));
+	printf("Desplazamiento real (interpretando el valor del campo) = %"PRIu16"\n", frag_offset*FRAG_OFFSET_CONST);
 
 	pack += 2*FORWARD_1BYTE;
 	aux = ntohs(*(uint16_t*)pack);
