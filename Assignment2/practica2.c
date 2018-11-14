@@ -185,12 +185,22 @@ void input_parameter_checking(int argc, char **argv){
 				printf("(*) -> Compruebe que el filtro IP_Origen se ha introducido con el formato A.B.C.D con A,B,C,D en [0,255]\n");
 				exit(ERROR);
 			}
+			if(flag_ipsrc == ACTIVE_FILTER){
+				invalid_input_message();
+				printf("(*) -> No se pueden introducir dos filtros IP_Origen\n");
+				exit(ERROR);
+			}	
 			flag_ipsrc = ACTIVE_FILTER;
 		}
 		else if(!strcmp(argv[j], "-ipd")){ /* Destination IP Address */
 			if(sscanf(argv[j+1], "%"SCNu8".%"SCNu8".%"SCNu8".%"SCNu8"",  &(ipdst_filter[0]), &(ipdst_filter[1]), &(ipdst_filter[2]), &(ipdst_filter[3])) != IP_ALEN){
 				invalid_input_message();
 				printf("(*) -> Compruebe que el filtro IP_Destino se ha introducido con el formato A.B.C.D con A,B,C,D en [0,255]\n");
+				exit(ERROR);
+			}
+			if(flag_ipdst == ACTIVE_FILTER){
+				invalid_input_message();
+				printf("(*) -> No se pueden introducir dos filtros IP_Destino\n");
 				exit(ERROR);
 			}
 			flag_ipdst = ACTIVE_FILTER;
@@ -201,12 +211,22 @@ void input_parameter_checking(int argc, char **argv){
 				printf("(*) -> Compruebe que el filtro Puerto_Origen se ha introducido correctamente\n");
 				exit(ERROR);
 			}
+			if(flag_srcport == ACTIVE_FILTER){
+				invalid_input_message();
+				printf("(*) -> No se pueden introducir dos filtros Puerto_Origen\n");
+				exit(ERROR);
+			}
 			flag_srcport = ACTIVE_FILTER;
 		}
 		else if(!strcmp(argv[j], "-pd")){ /* Destination port */
 			if(!(sscanf(argv[j+1], "%"SCNu16"", &dstport_filter))){
 				invalid_input_message();
 				printf("(*) -> Compruebe que el filtro Puerto_Destino se ha introducido correctamente\n");
+				exit(ERROR);
+			}
+			if(flag_dstport == ACTIVE_FILTER){
+				invalid_input_message();
+				printf("(*) -> No se pueden introducir dos filtros Puerto_Destino\n");
 				exit(ERROR);
 			}
 			flag_dstport = ACTIVE_FILTER;
