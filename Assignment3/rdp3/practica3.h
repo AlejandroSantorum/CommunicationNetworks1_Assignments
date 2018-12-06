@@ -43,9 +43,12 @@
 #define IP_DATAGRAM_MAX 65535	// Tamano maximo datagrama IP
 #define IP_PROTO 4		// Identificador protocolo IP
 #define IP_VERSION 4 // Version IPv4
-#define IHL_MIN 5 // Tamanio minimo cabecera IP
-#define IP_TIME_LIFE 64 // Tiempo de vida
+#define IHL_MIN 5 // Tamanio minimo cabecera IP en palabras de 4B
+#define IP_HLEN_MIN 20 // Tamanio minimo cabecera IP en B
+#define IP_LIFETIME 64 // Tiempo de vida
 #define IP_CHECKSUM_POS 10 // Numero de bytes desde el principio de la cabecera IP hasta el checksum
+#define IP_MAXDATA 1480 // Numero maximo de bytes que puedes tener un segmento (ETH_FRAM_MAX - ETH HEADER - IP HEADER)
+#define IP_FLAGS_DISPLACE 13 //Numero de bits que hay que desplazar las flags IPv4
 
 #define UDP_HLEN 8			// Tamano de cabecera UDP
 #define UDP_SEG_MAX 65507	// Tamano maximo datos segmento UDP
