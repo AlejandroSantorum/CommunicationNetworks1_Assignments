@@ -19,7 +19,7 @@ pcap_t* descr, *descr2; //Descriptores de la interface de red
 pcap_dumper_t * pdumper;//y salida a pcap
 uint64_t cont=0;	//Contador numero de mensajes enviados
 char interface[10];	//Interface donde transmitir por ejemplo "eth0"
-uint16_t ID=1;		//Identificador IP
+uint16_t ID=0;		//Identificador IP
 
 uint8_t _rangos_coincidentes(uint8_t* rango_origen, uint8_t* rango_destino, uint8_t longitud);
 
@@ -39,7 +39,7 @@ int main(int argc, char **argv){
 	uint16_t puerto_destino;
 	char data[IP_DATAGRAM_MAX];
 	uint16_t pila_protocolos[CADENAS];
-
+	int n_char=0;
 
 	int long_index=0;
 	char opt;
@@ -93,10 +93,10 @@ int main(int argc, char **argv){
 						printf("Error leyendo desde stdin: %s %s %d.\n",errbuf,__FILE__,__LINE__);
 						return ERROR;
 					}
+					n_char = strlen(data); /* El usuario debe encargarse de que sean pares en este caso */
 					sprintf(fichero_pcap_destino,"%s%s","stdin",".pcap");
 				} else {
 					sprintf(fichero_pcap_destino,"%s%s",optarg,".pcap");
-                    int n_char=0;
                     char c;
                     FILE *f=NULL;
                     f = (FILE *) fopen(optarg, "r");
@@ -111,6 +111,7 @@ int main(int argc, char **argv){
                     }
                     if(n_char % 2){ //Deben ser pares!
                         data[n_char-1] = 0;
+                        n_char++;
                     }
 					//TODO Leer fichero en data [...]
 				}
@@ -148,6 +149,7 @@ int main(int argc, char **argv){
 	if (flag_file == 0) {
 		sprintf(data,"%s","Payload "); //Deben ser pares!
 		sprintf(fichero_pcap_destino,"%s%s","debugging",".pcap");
+		n_char = strlen(data);
 	}
 
 	if(signal(SIGINT,handleSignal)==SIG_ERR){
@@ -184,14 +186,14 @@ int main(int argc, char **argv){
 	}
 	else	cont++;
 	printf("Enviado mensaje %"PRIu64", ICMP almacenado en %s\n\n", cont,fichero_pcap_destino);
-
+	
 	//Luego, un paquete UDP
 	//Definimos la pila de protocolos que queremos seguir
 	pila_protocolos[0]=UDP_PROTO; pila_protocolos[1]=IP_PROTO; pila_protocolos[2]=ETH_PROTO;
 	//Rellenamos los parametros necesario para enviar el paquete a su destinatario y proceso
 	Parametros parametros_udp; memcpy(parametros_udp.IP_destino,IP_destino_red,IP_ALEN); parametros_udp.bit_DF=flag_dontfrag; parametros_udp.puerto_destino=puerto_destino;
 	//Enviamos
-	if(enviar((uint8_t*)data,strlen(data),pila_protocolos,&parametros_udp)==ERROR ){
+	if(enviar((uint8_t*)data,n_char,pila_protocolos,&parametros_udp)==ERROR ){
 		printf("Error: enviar(): %s %s %d.\n",errbuf,__FILE__,__LINE__);
 		return ERROR;
 	}
@@ -411,12 +413,13 @@ uint8_t moduloIP(uint8_t* segmento, uint32_t longitud, uint16_t* pila_protocolos
             return ERROR;
         }
     }
-
     /* Creacion de cabeceras IP para cada uno de los posibles fragmentos */
     int data_frag_index = 0;
     int length;
     uint16_t aux;
+    ID++;
     while(longitud != data_frag_index){
+		aux16=0;
         int more_frag = 1;
         uint32_t pos = 0;
         /* Version & IHL */
@@ -435,13 +438,13 @@ uint8_t moduloIP(uint8_t* segmento, uint32_t longitud, uint16_t* pila_protocolos
             pos += sizeof(uint16_t);
         }
         else{
-            aux16 = htons((uint16_t)(longitud+IP_HLEN_MIN));
+            aux16 = htons((uint16_t)((longitud-data_frag_index)+IP_HLEN_MIN));
             memcpy(datagrama+pos, &aux16, sizeof(uint16_t));
             pos += sizeof(uint16_t);
             more_frag = 0;
         }
         /* Identifier */
-        aux16 = htons((uint16_t) 1);
+        aux16 = htons((uint16_t) ID);
         memcpy(datagrama+pos, &aux16, sizeof(uint16_t));
         pos += sizeof(uint16_t);
         /* Flags & Fragment offset */
@@ -449,6 +452,7 @@ uint8_t moduloIP(uint8_t* segmento, uint32_t longitud, uint16_t* pila_protocolos
         aux16 = aux16 << IP_FLAGS_DISPLACE;
         aux = (uint16_t) data_frag_index/8;
         aux16 += (0x1fff & aux);
+        aux16 = htons(aux16);
         memcpy(datagrama+pos, &aux16, sizeof(uint16_t));
         pos += sizeof(uint16_t);
         /* Time to Live */
@@ -558,6 +562,8 @@ uint8_t moduloETH(uint8_t* datagrama, uint32_t longitud, uint16_t* pila_protocol
         printf("Error inyectando en la red con pcap_inject() en el modulo ETH\n");
         return ERROR;
     }
+    
+    mostrarHex(trama, pos);
 
     if(pdumper){
         struct timeval tvs;
